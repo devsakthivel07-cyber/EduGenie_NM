@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <title>EduGenie</title>
+
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+
+<body>
+
+  <div class="page">
+
+    <!-- HERO -->
+    <header class="hero">
+
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8
+                 M16.3 16.3l2.8 2.8M2 12h4M18 12h4
+                 M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8" stroke-linecap="round" />
+          </svg>
+        </div>
+
+        <span>EduGenie</span>
+      </div>
+
+      <h1>
+        Ask, learn, and quiz yourself
+        <span>in one place.</span>
+      </h1>
+
+      <p>
+        Pick a task, enter your question or topic,
+        and let EduGenie help you learn.
+      </p>
+
+    </header>
+
+
+    <!-- MAIN CARD -->
+    <main class="card">
+
+      <form id="task-form">
+
+        <!-- TASK -->
+        <div class="field">
+
+          <label for="task">
+            What would you like to do?
+          </label>
+
+          <div class="select-wrapper">
+
+            <select id="task" name="task">
+
+              <option value="qa">
+                Ask a question
+              </option>
+
+              <option value="explain">
+                Explain a concept
+              </option>
+
+              <option value="quiz">
+                Generate a quiz
+              </option>
+
+              <option value="summarize">
+                Summarize a passage
+              </option>
+
+              <option value="learn">
+                Get a learning path
+              </option>
+
+            </select>
+
+          </div>
+
+        </div>
+
+
+        <!-- TEXT -->
+        <div class="field">
+
+          <label for="text" id="text-label">
+            Your question
+          </label>
+
+          <textarea id="text" name="text" placeholder="e.g. Which is the largest ocean?" required></textarea>
+
+          <p class="hint" id="text-hint">
+            Ask anything — EduGenie will give you a concise answer.
+          </p>
+
+        </div>
+
+
+        <!-- SUBMIT -->
+        <button type="submit" class="submit" id="submit-btn">
+
+          <span class="submit-text">
+            Generate
+          </span>
+
+          <span class="submit-loader"></span>
+
+        </button>
+
+      </form>
+
+
+      <!-- RESULTS -->
+      <div id="result-container"></div>
+
+    </main>
+
+
+    <footer>
+      Built with FastAPI + Google Gemini
+    </footer>
+
+  </div>
+
+
+  <script>
+
+    const taskSelect = document.getElementById("task");
+    const textLabel = document.getElementById("text-label");
+    const textArea = document.getElementById("text");
+    const textHint = document.getElementById("text-hint");
+    const form = document.getElementById("task-form");
+    const submitBtn = document.getElementById("submit-btn");
+    const resultContainer = document.getElementById("result-container");
+
+
+    /* ----------------------------------
+       TASK CONFIGURATION
+    ----------------------------------- */
+
+    const TASK_CONFIG = {
+
+      qa: {
+        endpoint: "/qa",
+        label: "Your question",
+        placeholder: "e.g. Which is the largest ocean?",
+        hint: "Ask anything — EduGenie will give you a concise answer."
+      },
+
+      explain: {
+        endpoint: "/explain",
+        label: "Topic to explain",
+        placeholder: "e.g. Photosynthesis",
+        hint: "EduGenie will break it down in simple terms."
+      },
+
+      quiz: {
+        endpoint: "/quiz",
+        label: "Passage or topic",
+        placeholder:
+          'Paste a passage, or type a topic like "Python programming"',
+        hint: "EduGenie will generate 3 multiple-choice questions."
+      },
+
+      summarize: {
+        endpoint: "/summarize",
+        label: "Passage to summarize",
+        placeholder: "Paste the text you want summarized",
+        hint: "You'll get a shorter version with the key points kept."
+      },
+
+      learn: {
+        endpoint: "/learn/recommendations",
+        label: "Topic to learn",
+        placeholder: "e.g. Python programming",
+        hint: "EduGenie will map out a beginner-to-advanced learning path."
+      }
+
+    };
+
+
+    /* ----------------------------------
+       CHANGE TASK
+    ----------------------------------- */
+
+    function applyTaskConfig() {
+
+      const config = TASK_CONFIG[taskSelect.value];
+
+      textLabel.textContent = config.label;
+      textArea.placeholder = config.placeholder;
+      textHint.textContent = config.hint;
+
+      resultContainer.innerHTML = "";
+    }
+
+    taskSelect.addEventListener("change", applyTaskConfig);
+
+    applyTaskConfig();
+
+
+    /* ----------------------------------
+       ESCAPE HTML
+    ----------------------------------- */
+
+    function escapeHtml(str) {
+
+      const div = document.createElement("div");
+
+      div.textContent = String(str);
+
+      return div.innerHTML;
+    }
+
+
+    /* ----------------------------------
+       LOADING
+    ----------------------------------- */
+
+    function showLoading(task) {
+
+      let message = "Thinking...";
+
+      if (task === "quiz") {
+        message = "Creating your quiz...";
+      }
+
+      if (task === "learn") {
+        message = "Building your learning path...";
+      }
+
+      if (task === "summarize") {
+        message = "Summarizing your passage...";
+      }
+
+      if (task === "explain") {
+        message = "Preparing a simple explanation...";
+      }
+
+      if (task === "qa") {
+        message = "Finding an answer...";
+      }
+
+      resultContainer.innerHTML = `
+    <div class="loading-card">
+
+      <div class="loading-icon">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+
+      <div>
+        <strong>${message}</strong>
+        <p>EduGenie is working on it for you.</p>
+      </div>
+
+    </div>
+  `;
+    }
+
+
+    /* ----------------------------------
+       NORMAL TEXT RESULT
+    ----------------------------------- */
+
+    function renderText(heading, text) {
+
+      let content = text;
+
+      /*
+        If backend returns an object,
+        convert it into readable JSON.
+      */
+
+      if (typeof content === "object" && content !== null) {
+
+        content = JSON.stringify(
+          content,
+          null,
+          2
+        );
+      }
+
+      resultContainer.innerHTML = `
+
+    <div class="result-box">
+
+      <div class="result-header">
+
+        <div class="result-badge">
+          ✦
+        </div>
+
+        <div>
+          <span class="result-label">
+            EduGenie
+          </span>
+
+          <h3>
+            ${escapeHtml(heading)}
+          </h3>
+        </div>
+
+      </div>
+
+      <div class="result-content">
+        ${escapeHtml(content)}
+      </div>
+
+    </div>
+
+  `;
+    }
+
+
+    /* ----------------------------------
+       ERROR
+    ----------------------------------- */
+
+  function renderError(message) {
+
+    const isQuota =
+      String(message).toLowerCase().includes("quota");
+
+    resultContainer.innerHTML = `
+
+    <div class="error-box">
+
+      <div class="error-icon">
+        ${isQuota ? "⏳" : "!"}
+      </div>
+
+      <div>
+
+        <strong>
+          ${isQuota
+        ? "Gemini quota reached"
+        : "Something went wrong"
+      }
+        </strong>
+
+        <p>
+          ${escapeHtml(message)}
+        </p>
+
+        ${isQuota
+        ? `
+              <div class="error-tip">
+                💡 Please try again after your
+                Gemini API quota becomes available.
+              </div>
+            `
+        : ""
+      }
+
+      </div>
+
+    </div>
+
+  `;
+  }
+
+
+    /* ----------------------------------
+       QUIZ
+    ----------------------------------- */
+
+    function renderQuiz(questions) {
+
+      resultContainer.innerHTML = "";
+
+      if (!Array.isArray(questions) || questions.length === 0) {
+
+        renderError("No quiz questions were generated.");
+
+        return;
+      }
+
+
+      let score = 0;
+      let answered = 0;
+
+
+      const quizWrapper = document.createElement("div");
+
+      quizWrapper.className = "quiz-wrapper";
+
+
+      /* QUIZ HEADER */
+
+      const quizHeader = document.createElement("div");
+
+      quizHeader.className = "quiz-header";
+
+      quizHeader.innerHTML = `
+
+    <div>
+
+      <span class="result-label">
+        KNOWLEDGE CHECK
+      </span>
+
+      <h2>
+        Test your understanding
+      </h2>
+
+      <p>
+        Answer each question to see how well you know the topic.
+      </p>
+
+    </div>
+
+    <div class="score-card">
+
+      <span>Score</span>
+
+      <strong id="quiz-score">
+        0 / ${questions.length}
+      </strong>
+
+    </div>
+
+  `;
+
+      quizWrapper.appendChild(quizHeader);
+
+
+      /* QUESTIONS */
+
+      questions.forEach((q, qIndex) => {
+
+        const qDiv = document.createElement("div");
+
+        qDiv.className = "quiz-question";
+
+
+        /* QUESTION TOP */
+
+        const questionTop = document.createElement("div");
+
+        questionTop.className = "question-top";
+
+
+        const number = document.createElement("div");
+
+        number.className = "question-number";
+
+        number.textContent =
+          String(qIndex + 1).padStart(2, "0");
+
+
+        const questionText = document.createElement("p");
+
+        questionText.className = "q-text";
+
+        questionText.textContent =
+          q.question || "Question";
+
+
+        questionTop.appendChild(number);
+        questionTop.appendChild(questionText);
+
+        qDiv.appendChild(questionTop);
+
+
+        /* OPTIONS */
+
+        const optionsContainer =
+          document.createElement("div");
+
+        optionsContainer.className =
+          "options-container";
+
+
+        const letters = ["A", "B", "C", "D"];
+
+
+        (q.options || []).forEach((opt, index) => {
+
+          const btn = document.createElement("button");
+
+          btn.type = "button";
+
+          btn.className = "quiz-option";
+
+
+          btn.innerHTML = `
+
+        <span class="option-letter">
+          ${letters[index] || ""}
+        </span>
+
+        <span class="option-text">
+          ${escapeHtml(opt)}
+        </span>
+
+        <span class="option-status"></span>
+
+      `;
+
+
+          btn.addEventListener("click", () => {
+
+            const allOptions =
+              optionsContainer.querySelectorAll(".quiz-option");
+
+
+            /*
+              Prevent another click
+            */
+
+            if (
+              [...allOptions].some(
+                option => option.disabled
+              )
+            ) {
+              return;
+            }
+
+
+            allOptions.forEach(option => {
+              option.disabled = true;
+            });
+
+
+            answered++;
+
+
+            if (opt === q.answer) {
+
+              score++;
+
+              btn.classList.add("correct");
+
+              btn.querySelector(".option-status")
+                .textContent = "✓";
+
+            } else {
+
+              btn.classList.add("incorrect");
+
+              btn.querySelector(".option-status")
+                .textContent = "✕";
+
+
+              allOptions.forEach(option => {
+
+                const optionText =
+                  option.querySelector(".option-text");
+
+                if (
+                  optionText &&
+                  optionText.textContent === q.answer
+                ) {
+
+                  option.classList.add("correct");
+
+                  option.querySelector(
+                    ".option-status"
+                  ).textContent = "✓";
+                }
+
+              });
+
+            }
+
+
+            /*
+              Update score
+            */
+
+            const scoreElement =
+              document.getElementById("quiz-score");
+
+            if (scoreElement) {
+
+              scoreElement.textContent =
+                `${score} / ${questions.length}`;
+
+            }
+
+          });
+
+
+          optionsContainer.appendChild(btn);
+
+        });
+
+
+        qDiv.appendChild(optionsContainer);
+
+        quizWrapper.appendChild(qDiv);
+
+      });
+
+
+      resultContainer.appendChild(quizWrapper);
+
+    }
+
+
+    /* ----------------------------------
+       LEARNING PATH
+    ----------------------------------- */
+
+    function renderLearningPath(result) {
+
+      let data = result;
+
+
+      /*
+        Gemini may return either a string
+        or an object depending on backend.
+      */
+
+      if (typeof data === "string") {
+
+        /*
+          Try to detect JSON
+        */
+
+        try {
+
+          data = JSON.parse(data);
+
+        } catch {
+
+          renderText(
+            "Your learning path",
+            result
+          );
+
+          return;
+        }
+
+      }
+
+
+      const wrapper =
+        document.createElement("div");
+
+      wrapper.className =
+        "learning-wrapper";
+
+
+      /*
+        HEADER
+      */
+
+      const header =
+        document.createElement("div");
+
+      header.className =
+        "learning-header";
+
+
+      header.innerHTML = `
+
+    <span class="result-label">
+      LEARNING PATH
+    </span>
+
+    <h2>
+      Your roadmap
+    </h2>
+
+    <p>
+      Follow these steps from the fundamentals
+      to more advanced concepts.
+    </p>
+
+  `;
+
+
+      wrapper.appendChild(header);
+
+
+      /*
+        Convert object/array into readable
+        learning steps.
+      */
+
+      let steps = [];
+
+
+      if (Array.isArray(data)) {
+
+        steps = data;
+
+      } else if (Array.isArray(data.path)) {
+
+        steps = data.path;
+
+      } else if (Array.isArray(data.steps)) {
+
+        steps = data.steps;
+
+      } else if (Array.isArray(data.learning_path)) {
+
+        steps = data.learning_path;
+
+      }
+
+
+      /*
+        If structured steps aren't available,
+        show formatted result instead.
+      */
+
+      if (steps.length === 0) {
+
+        renderText(
+          "Your learning path",
+          typeof result === "string"
+            ? result
+            : JSON.stringify(result, null, 2)
+        );
+
+        return;
+      }
+
+
+      const timeline =
+        document.createElement("div");
+
+      timeline.className =
+        "learning-timeline";
+
+
+      steps.forEach((step, index) => {
+
+        const item =
+          document.createElement("div");
+
+        item.className =
+          "learning-step";
+
+
+        const number =
+          document.createElement("div");
+
+        number.className =
+          "step-number";
+
+        number.textContent =
+          String(index + 1).padStart(2, "0");
+
+
+        const content =
+          document.createElement("div");
+
+        content.className =
+          "step-content";
+
+
+        let title = "";
+        let description = "";
+
+
+        if (typeof step === "string") {
+
+          title = step;
+
+        } else {
+
+          title =
+            step.title ||
+            step.topic ||
+            step.name ||
+            `Learning Step ${index + 1}`;
+
+
+          description =
+            step.description ||
+            step.details ||
+            step.content ||
+            "";
+
+        }
+
+
+        content.innerHTML = `
+
+      <span class="step-label">
+        STEP ${String(index + 1).padStart(2, "0")}
+      </span>
+
+      <h3>
+        ${escapeHtml(title)}
+      </h3>
+
+      ${description
+            ? `<p>${escapeHtml(description)}</p>`
+            : ""
+          }
+
+    `;
+
+
+        item.appendChild(number);
+
+        item.appendChild(content);
+
+        timeline.appendChild(item);
+
+      });
+
+
+      wrapper.appendChild(timeline);
+
+      resultContainer.appendChild(wrapper);
+
+    }
+
+
+    /* ----------------------------------
+       SUBMIT
+    ----------------------------------- */
+
+    form.addEventListener(
+      "submit",
+      async (e) => {
+
+        e.preventDefault();
+
+
+        const task =
+          taskSelect.value;
+
+        const config =
+          TASK_CONFIG[task];
+
+        const text =
+          textArea.value.trim();
+
+
+        if (!text) {
+
+          textArea.focus();
+
+          return;
+        }
+
+
+        submitBtn.disabled = true;
+
+        submitBtn.classList.add("loading");
+
+        showLoading(task);
+
+
+        try {
+
+          const formData =
+            new FormData();
+
+          formData.append(
+            "text",
+            text
+          );
+
+
+          const res =
+            await fetch(
+              config.endpoint,
+              {
+                method: "POST",
+                body: formData
+              }
+            );
+
+
+          const data =
+            await res.json();
+
+
+          const result =
+            data.result;
+
+
+          if (!res.ok) {
+
+            if (res.status === 429) {
+
+              renderError(
+                "Gemini API quota has been reached. " +
+                "Please wait for the quota to reset before trying again."
+              );
+
+              return;
+            }
+
+            renderError(
+              result ||
+              data.detail ||
+              "The server returned an error."
+            );
+
+            return;
+          }
+
+
+          /*
+            QUIZ
+          */
+
+          if (task === "quiz") {
+
+            if (
+              result &&
+              result.error
+            ) {
+
+              renderError(
+                result.error
+              );
+
+            } else {
+
+              renderQuiz(result);
+
+            }
+
+          }
+
+
+          /*
+            LEARNING PATH
+          */
+
+          else if (
+            task === "learn"
+          ) {
+
+            renderLearningPath(
+              result
+            );
+
+          }
+
+
+          /*
+            OTHER TASKS
+          */
+
+          else {
+
+            renderText(
+              labelForResult(task),
+              result
+            );
+
+          }
+
+
+        } catch (err) {
+
+          console.error(err);
+
+          renderError(
+            "Could not reach the server. Is it running?"
+          );
+
+        } finally {
+
+          submitBtn.disabled = false;
+
+          submitBtn.classList.remove(
+            "loading"
+          );
+
+        }
+
+      }
+    );
+
+
+    /* ----------------------------------
+       RESULT LABEL
+    ----------------------------------- */
+
+    function labelForResult(task) {
+
+      switch (task) {
+
+        case "qa":
+          return "Answer";
+
+        case "explain":
+          return "Explanation";
+
+        case "summarize":
+          return "Summary";
+
+        case "learn":
+          return "Your learning path";
+
+        default:
+          return "Result";
+
+      }
+
+    }
+
+  </script>
+
+</body>
+
+</html>
